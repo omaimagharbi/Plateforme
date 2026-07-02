@@ -2,6 +2,11 @@
 import { useState, useEffect, useCallback } from "react";
 import AppShell from "../components/AppShell";
 import TasksPanel from "./TasksPanel";
+import ChangeControlPanel from "./ChangeControlPanel";
+import SCurveChart from "./SCurveChart";
+import PortfolioPanel from "./PortfolioPanel";
+import PmpTrainingPanel from "./PmpTrainingPanel";
+import DocsPanel from "./DocsPanel";
 
 const CYCLE_TEXT = {
   predictif: "Mode prédictif — périmètre figé, toute modification déclenche une demande formelle de contrôle des changements.",
@@ -20,9 +25,9 @@ function needleAngle(v) {
   return ((c - 0.5) / 1.0) * 180 - 90;
 }
 function riskColor(score) {
-  if (score >= 15) return "var(--red)";
-  if (score >= 8) return "var(--amber)";
-  return "var(--green)";
+  if (score >= 15) return "#FF5C72";
+  if (score >= 8) return "#F6B73C";
+  return "#3FD99B";
 }
 function teamAC(team) {
   return (team || []).reduce((s, m) => s + Number(m.taux_horaire) * Number(m.heures_cumulees || 0), 0);
@@ -112,9 +117,14 @@ export default function DashboardClient({ user }) {
         />
       )}
 
+      {tab === "portfolio" && <PortfolioPanel onOpenProject={selectProject} />}
+      {tab === "pmp" && <PmpTrainingPanel />}
+
       {tab === "dash" && project && <DashPanel project={project} />}
       {tab === "tasks" && project && <TasksPanel project={project} />}
+      {tab === "changes" && project && <ChangeControlPanel project={project} onProjectUpdate={(p) => setProject((old) => ({ ...old, ...p }))} />}
       {tab === "risk" && project && <RiskPanel project={project} setProject={setProject} />}
+      {tab === "docs" && project && <DocsPanel project={project} user={user} />}
       {tab === "elan" && project && <ElanPanel project={project} setProject={setProject} />}
       {tab === "team" && project && (
         <TeamPanel project={project} setProject={setProject} onTimesheetChange={() => loadProject(projectId)} />
@@ -253,6 +263,20 @@ function ProjectsPanel({ user, projects, loading, onSelect, onRefresh, showNewMo
 function DashPanel({ project }) {
   const [pv, setPv] = useState(project.pv);
   const [ev, setEv] = useState(project.ev);
+  const [explain, setExplain] = useState("");
+  const [explainLoading, setExplainLoading] = useState(false);
+  const [explainErr, setExplainErr] = useState("");
+
+  async function loadExplain() {
+    setExplainLoading(true);
+    setExplainErr("");
+    setExplain("");
+    const res = await fetch(`/api/projects/${project.id}/explain`, { method: "POST" });
+    const data = await res.json();
+    setExplainLoading(false);
+    if (!res.ok) { setExplainErr(data.error || "La génération a échoué. Réessayez."); return; }
+    setExplain(data.explanation);
+  }
 
   useEffect(() => {
     setPv(project.pv);
@@ -279,6 +303,8 @@ function DashPanel({ project }) {
   const EAC = CPI > 0 ? budget / CPI : budget;
   const forecastDuree = SPI > 0 ? duree / SPI : duree;
   const delay = forecastDuree - duree;
+  const VAC = budget - EAC; // écart à l'achèvement : combien on économise (+) ou dépasse (-)
+  const TCPI = (budget - AC) !== 0 ? (budget - EV) / (budget - AC) : 1; // performance requise pour finir dans le budget initial
   const [cpiClass, cpiLabel] = statusClass(CPI);
   const [spiClass, spiLabel] = statusClass(SPI);
   const acPct = Math.min(100, Math.round((AC / budget) * 100));
@@ -336,6 +362,24 @@ function DashPanel({ project }) {
         </div>
       </div>
 
+      <div className="card" style={{ marginBottom: 22, borderLeft: "3px solid var(--gold)" }}>
+        <h3>💡 Explicabilité IA</h3>
+        <p style={{ fontSize: 12.5, color: "var(--muted)", margin: "0 0 12px" }}>
+          Demandez à l'IA d'expliquer, à partir des données réelles du projet (pas d'un texte générique), pourquoi
+          le CPI et le SPI sont à leur niveau actuel.
+        </p>
+        <button className="btn small" disabled={explainLoading} onClick={loadExplain}>
+          {explainLoading ? "Analyse en cours..." : "Pourquoi ces chiffres ?"}
+        </button>
+        {explainErr && <div className="err">{explainErr}</div>}
+        {explain && (
+          <div className="ai-banner" style={{ marginTop: 14 }}>
+            <div className="dot"></div>
+            <p>{explain}<span className="src">Explication générée par l'IA à partir des indicateurs du projet</span></p>
+          </div>
+        )}
+      </div>
+
       <div className="grid2">
         <div className="card">
           <h3>Avancement (saisie manuelle)</h3>
@@ -359,6 +403,31 @@ function DashPanel({ project }) {
             <div className="stat"><div className="v">{(CV >= 0 ? "+" : "") + fmtEUR(CV)}</div><div className="l">Écart de coût (CV)</div></div>
             <div className="stat"><div className="v">{(SV >= 0 ? "+" : "") + fmtEUR(SV)}</div><div className="l">Écart de délai (SV)</div></div>
           </div>
+        </div>
+      </div>
+
+      <div className="grid2">
+        <div className="card">
+          <h3>Indicateurs de projection avancés</h3>
+          <div className="stat-row">
+            <div className="stat">
+              <div className="v" style={{ color: VAC >= 0 ? "var(--green)" : "var(--red)" }}>{(VAC >= 0 ? "+" : "") + fmtEUR(VAC)}</div>
+              <div className="l">VAC — écart à l'achèvement</div>
+            </div>
+            <div className="stat">
+              <div className="v" style={{ color: TCPI <= 1 ? "var(--green)" : "var(--red)" }}>{TCPI.toFixed(2)}</div>
+              <div className="l">TCPI — performance requise pour finir dans le budget</div>
+            </div>
+          </div>
+          <div className="axis-caption" style={{ marginTop: 12 }}>
+            {TCPI > 1.1
+              ? "TCPI élevé : il faudrait une efficacité irréaliste pour respecter le budget initial — envisagez une révision via le Contrôle des changements."
+              : "TCPI proche de 1 : rester dans le budget initial reste réaliste au rythme de travail actuel."}
+          </div>
+        </div>
+        <div className="card">
+          <h3>Courbe en S — PV / EV / AC dans le temps</h3>
+          <SCurveChart projectId={project.id} />
         </div>
       </div>
     </section>
@@ -388,6 +457,44 @@ function RiskPanel({ project, setProject }) {
       return;
     }
     setProject((p) => ({ ...p, risk_sector: data.project.risk_sector, risks: data.project.risks }));
+  }
+
+  async function exportPdf() {
+    const { jsPDF } = await import("jspdf");
+    const doc = new jsPDF();
+    const marginX = 15;
+    let y = 20;
+
+    doc.setFontSize(18);
+    doc.text("Registre des risques — NEXUS", marginX, y);
+    y += 8;
+    doc.setFontSize(11);
+    doc.setTextColor(100);
+    doc.text(`Projet : ${project.nom}`, marginX, y);
+    y += 6;
+    if (project.risk_sector) { doc.text(`Secteur identifié : ${project.risk_sector}`, marginX, y); y += 6; }
+    doc.text(`Généré le : ${new Date().toLocaleDateString("fr-FR")}`, marginX, y);
+    y += 12;
+
+    doc.setTextColor(0);
+    doc.setFontSize(10);
+    const sorted = [...risks].sort((a, b) => b.probabilite * b.impact - a.probabilite * a.impact);
+    sorted.forEach((r, i) => {
+      if (y > 270) { doc.addPage(); y = 20; }
+      const score = r.probabilite * r.impact;
+      doc.setFont(undefined, "bold");
+      doc.text(`${i + 1}. ${r.nom}`, marginX, y);
+      doc.setFont(undefined, "normal");
+      doc.text(`P${r.probabilite} × I${r.impact} = ${score}`, 170, y, { align: "right" });
+      y += 6;
+      const lines = doc.splitTextToSize(r.mitigation, 180);
+      doc.setTextColor(90);
+      doc.text(lines, marginX, y);
+      doc.setTextColor(0);
+      y += lines.length * 5 + 8;
+    });
+
+    doc.save(`registre-risques-${project.nom.replace(/[^a-z0-9]/gi, "-").toLowerCase()}.pdf`);
   }
 
   return (
@@ -437,7 +544,10 @@ function RiskPanel({ project, setProject }) {
           <div className="axis-caption">Axe horizontal : Impact — Axe vertical : Probabilité</div>
         </div>
         <div className="card">
-          <h3>Risques identifiés &amp; atténuation</h3>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+            <h3 style={{ margin: 0 }}>Risques identifiés &amp; atténuation</h3>
+            {risks.length > 0 && <button className="btn small secondary" onClick={exportPdf}>⬇ Export PDF</button>}
+          </div>
           {risks.length === 0 ? (
             <p style={{ color: "var(--muted)", fontSize: 13 }}>Aucune analyse encore générée pour ce projet.</p>
           ) : (
@@ -554,6 +664,8 @@ function TeamPanel({ project, setProject, onTimesheetChange }) {
   const [role, setRole] = useState("");
   const [taux, setTaux] = useState(45);
   const [crit, setCrit] = useState(false);
+  const [csvErr, setCsvErr] = useState("");
+  const [csvLoading, setCsvLoading] = useState(false);
   const team = project.team || [];
 
   async function addMember() {
@@ -567,6 +679,50 @@ function TeamPanel({ project, setProject, onTimesheetChange }) {
     if (res.ok) {
       setProject((p) => ({ ...p, team: [...(p.team || []), data.member] }));
       setNom(""); setRole(""); setCrit(false);
+    }
+  }
+
+  async function handleCsvFile(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    setCsvErr(""); setCsvLoading(true);
+    try {
+      const text = await file.text();
+      const lines = text.trim().split(/\r?\n/);
+      // Ignore l'en-tête si la première ligne contient "nom" (insensible à la casse).
+      const startIdx = /nom/i.test(lines[0]) ? 1 : 0;
+      const rows = lines.slice(startIdx)
+        .map((l) => l.split(",").map((c) => c.trim()))
+        .filter((cols) => cols.length >= 3 && cols[0]);
+
+      if (!rows.length) {
+        setCsvErr("Aucune ligne valide trouvée. Format attendu : nom,role,tauxHoraire,heuresCumulees");
+        setCsvLoading(false);
+        return;
+      }
+
+      for (const cols of rows) {
+        const [csvNom, csvRole, csvTaux, csvHeures] = cols;
+        const createRes = await fetch(`/api/projects/${project.id}/team`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ nom: csvNom, role: csvRole || "Collaborateur", tauxHoraire: Number(csvTaux) || 40, critical: false }),
+        });
+        const createData = await createRes.json();
+        if (createRes.ok && Number(csvHeures) > 0) {
+          await fetch(`/api/projects/${project.id}/team/${createData.member.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "setHeuresCumulees", value: Number(csvHeures) }),
+          });
+        }
+      }
+      onTimesheetChange();
+    } catch (err) {
+      setCsvErr("Erreur lors de la lecture du fichier CSV.");
+    } finally {
+      setCsvLoading(false);
+      e.target.value = "";
     }
   }
 
@@ -608,6 +764,18 @@ function TeamPanel({ project, setProject, onTimesheetChange }) {
     <section>
       <h1 className="page-title">Équipe &amp; feuille de temps</h1>
       <p className="page-sub">Chaque heure enregistrée alimente automatiquement le coût réel (AC) du tableau de bord.</p>
+
+      <div className="card" style={{ marginBottom: 22, borderLeft: "3px solid var(--blue)" }}>
+        <h3>📥 Importer une feuille de temps (CSV)</h3>
+        <p style={{ fontSize: 12.5, color: "var(--muted)", margin: "0 0 12px" }}>
+          Format attendu : <code style={{ color: "var(--cream)" }}>nom,role,tauxHoraire,heuresCumulees</code> —
+          une ligne d'en-tête optionnelle, une ligne par collaborateur. Réduit la saisie manuelle si vous avez déjà
+          ces données dans un autre outil (export Excel/Jira/tableur RH).
+        </p>
+        <input type="file" accept=".csv,text/csv" onChange={handleCsvFile} disabled={csvLoading} style={{ fontSize: 12.5, color: "var(--muted)" }} />
+        {csvLoading && <span className="loading" style={{ marginLeft: 12 }}><span className="spin"></span> Import en cours...</span>}
+        {csvErr && <div className="err">{csvErr}</div>}
+      </div>
 
       <div className="card">
         <h3>Collaborateurs</h3>

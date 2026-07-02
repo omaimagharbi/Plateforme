@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import pool from "../../../../../../lib/db";
 import { getUserIdFromCookies } from "../../../../../../lib/auth";
 import { getOwnedProject } from "../../../../../../lib/projectAuth";
+import { recordEvmSnapshot } from "../../../../../../lib/evmSnapshot";
 
 // Body: { action: "setHeuresSemaine", value } ou { action: "logSemaine" }
 export async function PATCH(req, { params }) {
@@ -23,6 +24,13 @@ export async function PATCH(req, { params }) {
        returning id, nom, role, taux_horaire, critical, heures_semaine, heures_cumulees`,
       [value ?? 0, params.memberId]
     );
+  } else if (action === "setHeuresCumulees") {
+    // Utilisé par l'import CSV : écrase directement le cumul (au lieu de l'ajouter).
+    result = await pool.query(
+      `update team_members set heures_cumulees = $1 where id = $2
+       returning id, nom, role, taux_horaire, critical, heures_semaine, heures_cumulees`,
+      [value ?? 0, params.memberId]
+    );
   } else if (action === "logSemaine") {
     // Ajoute les heures de la semaine au cumul, puis remet le compteur hebdo à zéro.
     result = await pool.query(
@@ -35,6 +43,10 @@ export async function PATCH(req, { params }) {
     );
   } else {
     return NextResponse.json({ error: "Action inconnue." }, { status: 400 });
+  }
+
+  if (action === "logSemaine" || action === "setHeuresCumulees") {
+    await recordEvmSnapshot(params.id);
   }
 
   return NextResponse.json({ member: result.rows[0] });

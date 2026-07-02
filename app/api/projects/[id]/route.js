@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import pool from "../../../../lib/db";
 import { getUserIdFromCookies } from "../../../../lib/auth";
 import { getOwnedProject } from "../../../../lib/projectAuth";
+import { recordEvmSnapshot } from "../../../../lib/evmSnapshot";
 
 export async function GET(req, { params }) {
   const userId = getUserIdFromCookies();
@@ -30,6 +31,8 @@ export async function PATCH(req, { params }) {
      returning id, nom, budget, duree, cycle, pv, ev, risk_sector, risks, elan, created_at`,
     [pv, ev, cycle, params.id]
   );
+
+  await recordEvmSnapshot(params.id);
 
   return NextResponse.json({ project: result.rows[0] });
 }

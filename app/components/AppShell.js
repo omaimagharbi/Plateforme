@@ -4,15 +4,20 @@ import Logo from "./Logo";
 
 const NAV_ITEMS = [
   { key: "projects", label: "Mes projets", needsProject: false },
+  { key: "portfolio", label: "Portfolio PMO", needsProject: false, entrepriseOnly: true },
   { key: "dash", label: "Tableau de bord", needsProject: true },
   { key: "tasks", label: "Tâches (WBS)", needsProject: true },
+  { key: "changes", label: "Contrôle des changements", needsProject: true },
   { key: "risk", label: "Risques IA", needsProject: true },
+  { key: "docs", label: "Documents PMI", needsProject: true },
   { key: "elan", label: "Bouton Élan", needsProject: true },
   { key: "team", label: "Équipe & temps", needsProject: true },
+  { key: "pmp", label: "Entraînement PMP", needsProject: false },
 ];
 
 export default function AppShell({ user, activeTab, onTabChange, hasProject, children }) {
   const router = useRouter();
+  const visibleItems = NAV_ITEMS.filter((item) => !item.entrepriseOnly || user.type === "entreprise");
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -32,7 +37,7 @@ export default function AppShell({ user, activeTab, onTabChange, hasProject, chi
         </div>
 
         <nav className="nav">
-          {NAV_ITEMS.map((item) => (
+          {visibleItems.map((item) => (
             <button
               key={item.key}
               className={activeTab === item.key ? "active" : ""}

@@ -16,6 +16,20 @@ export default function TasksPanel({ project }) {
   const [duree, setDuree] = useState(3);
   const [deps, setDeps] = useState([]);
 
+  // générateur WBS par IA
+  const [wbsDesc, setWbsDesc] = useState("");
+  const [wbsLoading, setWbsLoading] = useState(false);
+  const [wbsErr, setWbsErr] = useState("");
+
+  // import Jira
+  const [jiraDomain, setJiraDomain] = useState("");
+  const [jiraEmail, setJiraEmail] = useState("");
+  const [jiraToken, setJiraToken] = useState("");
+  const [jiraKey, setJiraKey] = useState("");
+  const [jiraLoading, setJiraLoading] = useState(false);
+  const [jiraErr, setJiraErr] = useState("");
+  const [jiraMsg, setJiraMsg] = useState("");
+
   const load = useCallback(async () => {
     setLoading(true);
     const res = await fetch(`/api/projects/${project.id}/tasks`);
@@ -59,6 +73,40 @@ export default function TasksPanel({ project }) {
     setDeps((d) => (d.includes(taskId) ? d.filter((x) => x !== taskId) : [...d, taskId]));
   }
 
+  async function generateWbs() {
+    if (!wbsDesc.trim()) return;
+    setWbsLoading(true);
+    setWbsErr("");
+    const res = await fetch(`/api/projects/${project.id}/wbs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ description: wbsDesc }),
+    });
+    const data = await res.json();
+    setWbsLoading(false);
+    if (!res.ok) { setWbsErr(data.error || "La génération a échoué. Réessayez."); return; }
+    setWbsDesc("");
+    load();
+  }
+
+  async function importJira() {
+    if (!jiraDomain.trim() || !jiraEmail.trim() || !jiraToken.trim() || !jiraKey.trim()) return;
+    setJiraLoading(true);
+    setJiraErr("");
+    setJiraMsg("");
+    const res = await fetch(`/api/projects/${project.id}/jira-import`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ domain: jiraDomain, email: jiraEmail, apiToken: jiraToken, projectKey: jiraKey }),
+    });
+    const data = await res.json();
+    setJiraLoading(false);
+    setJiraToken(""); // on ne garde jamais le jeton en mémoire plus longtemps que nécessaire
+    if (!res.ok) { setJiraErr(data.error || "L'import a échoué."); return; }
+    setJiraMsg(`${data.imported} ticket(s) importé(s) comme tâches.`);
+    load();
+  }
+
   const criticalCount = tasks.filter((t) => t.critical).length;
 
   return (
@@ -75,8 +123,58 @@ export default function TasksPanel({ project }) {
         <div className="stat"><div className="v">{makespan} j.</div><div className="l">Durée totale calculée</div></div>
       </div>
 
+      <div className="card" style={{ marginBottom: 22, borderLeft: "3px solid var(--gold)" }}>
+        <h3>🧠 Générer la WBS par IA</h3>
+        <p style={{ fontSize: 12.5, color: "var(--muted)", margin: "0 0 12px" }}>
+          Décrivez le projet, l'IA propose un découpage en tâches réalistes avec durées et dépendances —
+          ajoutées directement à votre WBS ci-dessous.
+        </p>
+        <textarea value={wbsDesc} onChange={(e) => setWbsDesc(e.target.value)} placeholder="Ex : Développer une application mobile de livraison de repas avec paiement intégré..." />
+        <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 12 }}>
+          <button className="btn" disabled={wbsLoading} onClick={generateWbs}>🧠 Générer la WBS</button>
+          {wbsLoading && <span className="loading"><span className="spin"></span> Découpage du projet en cours...</span>}
+        </div>
+        {wbsErr && <div className="err">{wbsErr}</div>}
+      </div>
+
       <div className="card" style={{ marginBottom: 22 }}>
-        <h3>Ajouter une tâche</h3>
+        <h3>🔗 Importer depuis Jira</h3>
+        <p style={{ fontSize: 12.5, color: "var(--muted)", margin: "0 0 12px" }}>
+          Récupère les tickets d'un projet Jira Cloud et les ajoute à la WBS. Vos identifiants ne sont jamais
+          enregistrés — ils servent uniquement à cet import.
+        </p>
+        <div className="auth-row2" style={{ marginBottom: 10 }}>
+          <div className="auth-field" style={{ marginBottom: 0 }}>
+            <label>Domaine Jira</label>
+            <input type="text" value={jiraDomain} onChange={(e) => setJiraDomain(e.target.value)} placeholder="votreentreprise.atlassian.net" />
+          </div>
+          <div className="auth-field" style={{ marginBottom: 0 }}>
+            <label>Clé du projet Jira</label>
+            <input type="text" value={jiraKey} onChange={(e) => setJiraKey(e.target.value)} placeholder="Ex : NEXUS" />
+          </div>
+        </div>
+        <div className="auth-row2" style={{ marginBottom: 10 }}>
+          <div className="auth-field" style={{ marginBottom: 0 }}>
+            <label>Email du compte Jira</label>
+            <input type="email" value={jiraEmail} onChange={(e) => setJiraEmail(e.target.value)} placeholder="vous@entreprise.com" />
+          </div>
+          <div className="auth-field" style={{ marginBottom: 0 }}>
+            <label>Jeton API Jira</label>
+            <input type="password" value={jiraToken} onChange={(e) => setJiraToken(e.target.value)} placeholder="••••••••" />
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <button className="btn small" disabled={jiraLoading} onClick={importJira}>
+            {jiraLoading ? "Import en cours..." : "Importer les tickets"}
+          </button>
+          {jiraLoading && <span className="loading"><span className="spin"></span> Connexion à Jira...</span>}
+        </div>
+        {jiraErr && <div className="err">{jiraErr}</div>}
+        {jiraMsg && <div className="axis-caption" style={{ marginTop: 8, color: "var(--green)" }}>{jiraMsg}</div>}
+      </div>
+
+      <div className="card" style={{ marginBottom: 22 }}>
+        <h3>Ajouter une tâche manuellement</h3>
         <div className="auth-row2" style={{ marginBottom: 10 }}>
           <div className="auth-field" style={{ marginBottom: 0 }}>
             <label>Nom de la tâche</label>
