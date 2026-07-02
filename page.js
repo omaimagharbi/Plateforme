@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { key: "tasks", label: "Tâches (WBS)", needsProject: true },
   { key: "changes", label: "Contrôle des changements", needsProject: true },
   { key: "risk", label: "Risques IA", needsProject: true },
+  { key: "docs", label: "Documents PMI", needsProject: true },
   { key: "elan", label: "Bouton Élan", needsProject: true },
   { key: "team", label: "Équipe & temps", needsProject: true },
   { key: "pmp", label: "Entraînement PMP", needsProject: false },
