@@ -1,34 +1,13 @@
-import { NextResponse } from "next/server";
-import bcrypt from "bcryptjs";
-import pool from "../../../../lib/db";
-import { signToken, setSessionCookie } from "../../../../lib/auth";
+# Copiez ce fichier en ".env.local" et remplissez les valeurs avant de lancer le projet.
 
-export async function POST(req) {
-  const { email, password } = await req.json();
-  if (!email || !password) {
-    return NextResponse.json({ error: "Email et mot de passe requis." }, { status: 400 });
-  }
+# Chaîne de connexion PostgreSQL (Neon, Supabase, Railway, etc.)
+# Exemple Neon : postgresql://user:password@ep-xxxx.eu-central-1.aws.neon.tech/neondb?sslmode=require
+DATABASE_URL=
 
-  const normalizedEmail = email.toLowerCase().trim();
-  const result = await pool.query(
-    `select id, email, password_hash, type, display_name, responsable, taille, telephone
-     from users where email = $1`,
-    [normalizedEmail]
-  );
-  const user = result.rows[0];
+# Chaîne aléatoire longue et secrète utilisée pour signer les sessions (cookies)
+# Générez-en une avec : openssl rand -base64 48
+JWT_SECRET=
 
-  if (!user) {
-    return NextResponse.json({ error: "Email ou mot de passe incorrect." }, { status: 401 });
-  }
-
-  const valid = await bcrypt.compare(password, user.password_hash);
-  if (!valid) {
-    return NextResponse.json({ error: "Email ou mot de passe incorrect." }, { status: 401 });
-  }
-
-  const token = signToken({ userId: user.id });
-  setSessionCookie(token);
-
-  delete user.password_hash;
-  return NextResponse.json({ user });
-}
+# Votre clé API Anthropic (https://console.anthropic.com/settings/keys)
+# Nécessaire pour les fonctionnalités IA (Risk Predictor, Bouton Élan)
+ANTHROPIC_API_KEY=

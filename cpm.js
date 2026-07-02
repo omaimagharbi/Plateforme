@@ -1,47 +1,27 @@
-import { NextResponse } from "next/server";
-import bcrypt from "bcryptjs";
-import pool from "../../../../lib/db";
-import { signToken, setSessionCookie } from "../../../../lib/auth";
+// Appelle l'API Anthropic côté serveur (la clé n'est jamais exposée au navigateur).
+export async function callClaude(systemPrompt, userPrompt) {
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": process.env.ANTHROPIC_API_KEY,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-6",
+      max_tokens: 1000,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userPrompt }],
+    }),
+  });
 
-export async function POST(req) {
-  const body = await req.json();
-  const { email, password, type, displayName, responsable, taille, telephone } = body;
-
-  if (!email || !email.includes("@")) {
-    return NextResponse.json({ error: "Adresse email invalide." }, { status: 400 });
-  }
-  if (!password || password.length < 6) {
-    return NextResponse.json(
-      { error: "Le mot de passe doit contenir au moins 6 caractères." },
-      { status: 400 }
-    );
-  }
-  if (!["particulier", "entreprise"].includes(type)) {
-    return NextResponse.json({ error: "Type de compte invalide." }, { status: 400 });
-  }
-  if (!displayName) {
-    return NextResponse.json({ error: "Nom manquant." }, { status: 400 });
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Anthropic API error (${response.status}): ${errText}`);
   }
 
-  const normalizedEmail = email.toLowerCase().trim();
-
-  const existing = await pool.query("select id from users where email = $1", [normalizedEmail]);
-  if (existing.rows.length) {
-    return NextResponse.json({ error: "Un compte existe déjà avec cet email." }, { status: 400 });
-  }
-
-  const passwordHash = await bcrypt.hash(password, 10);
-
-  const result = await pool.query(
-    `insert into users (email, password_hash, type, display_name, responsable, taille, telephone)
-     values ($1, $2, $3, $4, $5, $6, $7)
-     returning id, email, type, display_name, responsable, taille, telephone`,
-    [normalizedEmail, passwordHash, type, displayName, responsable || null, taille || null, telephone || null]
-  );
-
-  const user = result.rows[0];
-  const token = signToken({ userId: user.id });
-  setSessionCookie(token);
-
-  return NextResponse.json({ user });
+  const data = await response.json();
+  const text = data.content.map((b) => b.text || "").join("\n");
+  const clean = text.replace(/```json|```/g, "").trim();
+  return JSON.parse(clean);
 }
