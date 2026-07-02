@@ -5,6 +5,7 @@ import Logo from "./Logo";
 const NAV_ITEMS = [
   { key: "projects", label: "Mes projets", needsProject: false },
   { key: "dash", label: "Tableau de bord", needsProject: true },
+  { key: "tasks", label: "Tâches (WBS)", needsProject: true },
   { key: "risk", label: "Risques IA", needsProject: true },
   { key: "elan", label: "Bouton Élan", needsProject: true },
   { key: "team", label: "Équipe & temps", needsProject: true },

@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import AppShell from "../components/AppShell";
+import TasksPanel from "./TasksPanel";
 
 const CYCLE_TEXT = {
   predictif: "Mode prédictif — périmètre figé, toute modification déclenche une demande formelle de contrôle des changements.",
@@ -112,6 +113,7 @@ export default function DashboardClient({ user }) {
       )}
 
       {tab === "dash" && project && <DashPanel project={project} />}
+      {tab === "tasks" && project && <TasksPanel project={project} />}
       {tab === "risk" && project && <RiskPanel project={project} setProject={setProject} />}
       {tab === "elan" && project && <ElanPanel project={project} setProject={setProject} />}
       {tab === "team" && project && (
